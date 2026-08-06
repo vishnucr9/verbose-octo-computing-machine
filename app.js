@@ -4,6 +4,7 @@
    - Nav now supports collapsed thin-column state (~50px) and an inline small-square toggle at top-right of the nav
    - Consolidated passive tracker and removed duplicate DOMContentLoaded handler
    - Made nav-toggle-inline the single source of truth for toggling navigation; set aria attributes and consolidated nav buttons
+   - Restored visibility of the three integrated nav buttons by ensuring 'btn-visible' is applied
    ======================================================== */
 
 const DEBUG = false; // toggle to true for console debug
@@ -54,6 +55,11 @@ let userClosedNav = false;
    ---------------------- */
 const showControls = () => {
   scrollTopBtn?.classList.add('btn-visible');
+  // ensure integrated nav buttons are visible when controls shown
+  scrollTopTwoBtn?.classList.add('btn-visible');
+  scrollTopThreeBtn?.classList.add('btn-visible');
+  scrollTopFourBtn?.classList.add('btn-visible');
+
   if (navMenuStack && !userClosedNav) {
     navMenuStack.classList.remove('collapsed', 'stack-hidden', 'stack-hidden-force');
     navMenuStack.classList.add('stack-visible');
@@ -69,6 +75,11 @@ const showControls = () => {
 
 const hideControlsTemporarily = () => {
   scrollTopBtn?.classList.remove('btn-visible');
+  // hide integrated nav buttons when controls hidden
+  scrollTopTwoBtn?.classList.remove('btn-visible');
+  scrollTopThreeBtn?.classList.remove('btn-visible');
+  scrollTopFourBtn?.classList.remove('btn-visible');
+
   if (navMenuStack && !userClosedNav) {
     // temporarily hide (not collapsed) to avoid UI overlap
     navMenuStack.classList.remove('stack-visible');
@@ -119,6 +130,11 @@ const runVisibilityEngine = () => {
   } else {
     // near top
     scrollTopBtn?.classList.remove('btn-visible');
+    // also ensure integrated buttons are hidden near top
+    scrollTopTwoBtn?.classList.remove('btn-visible');
+    scrollTopThreeBtn?.classList.remove('btn-visible');
+    scrollTopFourBtn?.classList.remove('btn-visible');
+
     if (navMenuStack && !userClosedNav) {
       navMenuStack.classList.remove('stack-visible');
       navMenuStack.classList.add('stack-hidden');
@@ -257,7 +273,7 @@ const initializeNavigationControls = () => {
     if (!btn) {
       btn = document.createElement('button');
       // keep semantic class but also nav-item-action-link for layout
-      btn.className = `${className} nav-item-action-link`;
+      btn.className = `${className} nav-item-action-link btn-visible`;
       if (labelText) btn.setAttribute('aria-label', labelText);
       // build inner structure (icon + text) similar to minimalist buttons
       btn.innerHTML = `
@@ -277,6 +293,8 @@ const initializeNavigationControls = () => {
           <span class="btn-text-label">${labelText || ''}</span>
         `;
       }
+      // make visible if it exists but isn't
+      btn.classList.add('btn-visible');
     }
 
     // Attach handler once
