@@ -2,6 +2,8 @@
    app.js — updated: inline small-top toggle + collapsed thin nav
    - Maintains all previous behavior (expanded card observer, rAF-driven visibility engine, Read More toggles)
    - Nav now supports collapsed thin-column state (~50px) and an inline small-square toggle at top-right of the nav
+   - Consolidated passive tracker and removed duplicate DOMContentLoaded handler
+   - Made nav-toggle-inline the single source of truth for toggling navigation; set aria attributes and consolidated nav buttons
    ======================================================== */
 
 const DEBUG = false; // toggle to true for console debug
@@ -59,6 +61,9 @@ const showControls = () => {
     document.body.classList.add('nav-visible');
     // ensure CSS var is set to expanded width
     document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '308px');
+    // accessibility
+    navMenuStack.setAttribute('aria-hidden', 'false');
+    if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'true');
   }
 };
 
@@ -186,13 +191,14 @@ const initializeNavigationControls = () => {
     navMenuStack.classList.remove('stack-hidden');
   }
 
-  // Ensure nav toggle inline (small box top-right inside the nav)
+  // Ensure nav toggle inline (small box top-right inside the nav) — single source of truth
   navToggleInline = navMenuStack.querySelector('.nav-toggle-inline');
   if (!navToggleInline) {
     navToggleInline = document.createElement('button');
     navToggleInline.className = 'nav-toggle-inline';
     navToggleInline.setAttribute('aria-label', 'Toggle navigation');
     navToggleInline.setAttribute('title', 'Show / Hide');
+    navToggleInline.setAttribute('aria-expanded', 'false');
     navToggleInline.innerHTML = `
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -204,9 +210,12 @@ const initializeNavigationControls = () => {
   }
 
   // Toggle function: switch between collapsed narrow strip and expanded nav
-  const toggleNavVisibility = () => {
+  const toggleNavVisibility = (forceState) => {
+    // forceState: true->expand, false->collapse, undefined->toggle
     const isCollapsed = navMenuStack.classList.contains('collapsed');
-    if (isCollapsed) {
+    const shouldExpand = (typeof forceState === 'boolean') ? forceState : isCollapsed;
+
+    if (shouldExpand) {
       // expand
       navMenuStack.classList.remove('collapsed', 'stack-hidden');
       navMenuStack.classList.add('stack-visible');
@@ -216,6 +225,8 @@ const initializeNavigationControls = () => {
       userClosedNav = false;
       // sync CSS var
       document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '308px');
+      navMenuStack.setAttribute('aria-hidden', 'false');
+      navToggleInline.setAttribute('aria-expanded', 'true');
       log('nav -> expanded');
     } else {
       // collapse to thin column (50px)
@@ -227,6 +238,8 @@ const initializeNavigationControls = () => {
       userClosedNav = true;
       // set CSS var to collapsed width (50px)
       document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-collapsed-width') || '50px');
+      navMenuStack.setAttribute('aria-hidden', 'true');
+      navToggleInline.setAttribute('aria-expanded', 'false');
       log('nav -> collapsed');
     }
   };
@@ -236,45 +249,33 @@ const initializeNavigationControls = () => {
     toggleNavVisibility();
   });
 
-  // If the nav was empty, add a heading + close button to be consistent (content is hidden in collapsed state)
-  if (!navMenuStack.querySelector('.nav-stack-heading')) {
-    const heading = document.createElement('div');
-    heading.className = 'nav-stack-heading';
-    heading.textContent = 'go-to';
-    navMenuStack.appendChild(heading);
-  }
-
-  if (!navMenuStack.querySelector('.close-sidebar-btn')) {
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'close-sidebar-btn';
-    closeBtn.setAttribute('aria-label', 'Collapse Panel Layout');
-    closeBtn.innerHTML = '<span class="console-dock-arrow" aria-hidden="true">&#x25C0;</span>';
-    closeBtn.addEventListener('click', () => {
-      // clicking the close - collapse nav
-      navMenuStack.classList.add('collapsed');
-      navMenuStack.classList.remove('stack-visible');
-      document.body.classList.add('nav-collapsed');
-      document.body.classList.remove('nav-visible');
-      navToggleInline.classList.add('collapsed');
-      userClosedNav = true;
-      document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-collapsed-width') || '50px');
-      log('user closed nav (close button) -> collapsed');
-    });
-    navMenuStack.appendChild(closeBtn);
-  }
+  // DO NOT create a 'go-to' heading or a separate close arrow button here — navToggleInline is the toggle
 
   // Helper: find-or-create button, attach handler once, ensure it lives inside navMenuStack
-  const ensureBtn = (className, handler, labelText = '') => {
+  const ensureBtn = (className, handler, labelText = '', iconChar = '') => {
     let btn = navMenuStack.querySelector(`.${className}`) || document.querySelector(`.${className}`);
     if (!btn) {
       btn = document.createElement('button');
-      btn.className = `${className} btn-visible`;
+      // keep semantic class but also nav-item-action-link for layout
+      btn.className = `${className} nav-item-action-link`;
       if (labelText) btn.setAttribute('aria-label', labelText);
+      // build inner structure (icon + text) similar to minimalist buttons
+      btn.innerHTML = `
+        <div class="btn-char-icon">${iconChar || ''}</div>
+        <span class="btn-text-label">${labelText || ''}</span>
+      `;
       navMenuStack.appendChild(btn);
     } else {
       // move into nav stack if somewhere else
       if (navMenuStack && btn.parentElement !== navMenuStack) {
         navMenuStack.appendChild(btn);
+      }
+      // ensure text/icon present
+      if (!btn.querySelector('.btn-char-icon')) {
+        btn.innerHTML = `
+          <div class="btn-char-icon">${iconChar || ''}</div>
+          <span class="btn-text-label">${labelText || ''}</span>
+        `;
       }
     }
 
@@ -299,12 +300,21 @@ const initializeNavigationControls = () => {
     if (target) {
       const absoluteTop = getScrollTop() + target.getBoundingClientRect().top;
       safeScrollTo({ top: Math.max(0, absoluteTop - 20), behavior: 'smooth' });
+      // auto-collapse nav when a section is selected for cleaner UX
+      if (navMenuStack) {
+        navMenuStack.classList.add('collapsed');
+        document.body.classList.remove('nav-visible');
+        document.body.classList.add('nav-collapsed');
+        navMenuStack.setAttribute('aria-hidden', 'true');
+        if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'false');
+      }
     }
   };
 
-  scrollTopTwoBtn = ensureBtn('scroll-top-two-btn', () => scrollToSection('#aviation-section', 'aviation'), 'Go to Aviation');
-  scrollTopThreeBtn = ensureBtn('scroll-top-three-btn', () => scrollToSection('#hydrogen-section', 'hydrogen'), 'Go to Hydrogen');
-  scrollTopFourBtn = ensureBtn('scroll-top-four-btn', () => scrollToSection(null, 'infrastructure'), 'Go to Infrastructure');
+  // Create three integrated nav buttons (icons + text) — only three, no duplicates
+  scrollTopTwoBtn = ensureBtn('scroll-top-two-btn', () => scrollToSection('#aviation-section', 'aviation'), 'Go to Aviation', '✈');
+  scrollTopThreeBtn = ensureBtn('scroll-top-three-btn', () => scrollToSection('#hydrogen-section', 'hydrogen'), 'Go to Hydrogen', '⚡');
+  scrollTopFourBtn = ensureBtn('scroll-top-four-btn', () => scrollToSection('#infrastructure-section', 'infrastructure'), 'Go to Infrastructure', 'AI');
 
   // Ensure primary scrollTopBtn has handler too
   if (scrollTopBtn && !scrollTopBtn.dataset.hasHandler) {
@@ -317,9 +327,13 @@ const initializeNavigationControls = () => {
   if (!navMenuStack.classList.contains('collapsed')) {
     document.body.classList.add('nav-visible');
     document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '308px');
+    navMenuStack.setAttribute('aria-hidden', 'false');
+    if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'true');
   } else {
     document.body.classList.add('nav-collapsed');
     document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-collapsed-width') || '50px');
+    navMenuStack.setAttribute('aria-hidden', 'true');
+    if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'false');
   }
 };
 
@@ -343,6 +357,7 @@ const setupCardAccordions = () => {
 
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'pipeline-toggle-btn';
+    toggleBtn.setAttribute('aria-expanded', 'false');
     toggleBtn.innerHTML = '<span>+ Read More</span>';
     section.appendChild(toggleBtn);
 
@@ -355,6 +370,7 @@ const setupCardAccordions = () => {
         for (let i = 3; i < listItems.length; i++) listItems[i].classList.add('row-collapsed-node');
         toggleBtn.classList.remove('expanded');
         toggleBtn.innerHTML = '<span>+ Read More</span>';
+        toggleBtn.setAttribute('aria-expanded', 'false');
 
         // Unobserve if needed
         if (expandedObserver) {
@@ -368,6 +384,8 @@ const setupCardAccordions = () => {
         if (navMenuStack) {
           navMenuStack.classList.remove('stack-hidden-force', 'stack-hidden');
           navMenuStack.classList.add('stack-visible');
+          navMenuStack.setAttribute('aria-hidden', 'false');
+          if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'true');
         }
         userClosedNav = false;
         scrollTopBtn?.classList.add('btn-visible');
@@ -392,6 +410,7 @@ const setupCardAccordions = () => {
         for (let i = 3; i < listItems.length; i++) listItems[i].classList.remove('row-collapsed-node');
         toggleBtn.classList.add('expanded');
         toggleBtn.innerHTML = '<span>- Read Less</span>';
+        toggleBtn.setAttribute('aria-expanded', 'true');
 
         section.dataset.expanded = 'true';
         currentExpandedCardElement = section;
@@ -486,111 +505,44 @@ document.addEventListener('DOMContentLoaded', () => {
     if (a) ignoreSnapUntil = now() + 800;
   }, { passive: true });
 
+  // Passive viewport tracker: keep splash/nav sync but avoid duplicating toggle creation
+  (function() {
+    const splashWrapper = document.getElementById('dashboard-splash-wrapper');
+    if (!navMenuStack) return; // nothing to do
+
+    const syncSplashStateWithScroll = () => {
+      if (!splashWrapper) return;
+      const splashBounding = splashWrapper.getBoundingClientRect();
+
+      if (splashBounding.bottom > 50) {
+        document.body.classList.add('splash-in-view');
+        document.body.classList.remove('nav-visible', 'nav-collapsed');
+      } else {
+        document.body.classList.remove('splash-in-view');
+        if (navMenuStack.classList.contains('collapsed')) {
+          document.body.classList.remove('nav-visible');
+          document.body.classList.add('nav-collapsed');
+          navMenuStack.setAttribute('aria-hidden', 'true');
+          if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'false');
+        } else {
+          document.body.classList.remove('nav-collapsed');
+          document.body.classList.add('nav-visible');
+          navMenuStack.setAttribute('aria-hidden', 'false');
+          if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'true');
+        }
+      }
+    };
+
+    syncSplashStateWithScroll();
+    window.addEventListener('scroll', syncSplashStateWithScroll, { passive: true });
+
+  })();
+
   // cleanup
   window.addEventListener('beforeunload', () => {
     if (expandedObserver) {
       try { expandedObserver.disconnect(); } catch (e) { /* ignore */ }
       expandedObserver = null;
-    }
-  });
-});
-
-/* ========================================================
-   PASSIVE VIEWPORT TRACKER MODULE (MINIMALIST CHAR ICONS)
-   ======================================================== */
-document.addEventListener('DOMContentLoaded', () => {
-  const navMenuStack = document.querySelector('.left-nav-menu-stack');
-  const splashWrapper = document.getElementById('dashboard-splash-wrapper');
-
-  if (!navMenuStack) return;
-
-  // 1. Ensure SVG toggle button is created with proper icon
-  let navToggleInline = navMenuStack.querySelector('.nav-toggle-inline');
-  if (!navToggleInline) {
-    navToggleInline = document.createElement('button');
-    navToggleInline.className = 'nav-toggle-inline';
-    navToggleInline.setAttribute('aria-label', 'Toggle Navigation Layout Panel');
-    navToggleInline.innerHTML = `
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-        <line x1="9" y1="3" x2="9" y2="21"></line>
-      </svg>
-    `;
-    navMenuStack.insertBefore(navToggleInline, navMenuStack.firstChild);
-  }
-
-  const syncSplashStateWithScroll = () => {
-    if (!splashWrapper) return;
-    const splashBounding = splashWrapper.getBoundingClientRect();
-    
-    if (splashBounding.bottom > 50) {
-      document.body.classList.add('splash-in-view');
-      document.body.classList.remove('nav-visible', 'nav-collapsed');
-    } else {
-      document.body.classList.remove('splash-in-view');
-      if (navMenuStack.classList.contains('collapsed')) {
-        document.body.classList.remove('nav-visible');
-        document.body.classList.add('nav-collapsed');
-      } else {
-        document.body.classList.remove('nav-collapsed');
-        document.body.classList.add('nav-visible');
-      }
-    }
-  };
-
-  syncSplashStateWithScroll();
-  window.addEventListener('scroll', syncSplashStateWithScroll, { passive: true });
-
-  // Minimalist Generator using single character markers
-  const createMinimalBtn = (targetSelector, labelText, iconChar) => {
-    const btn = document.createElement('button');
-    btn.className = 'nav-item-action-link'; // Enforces vertical stack blocks layout
-    
-    btn.innerHTML = `
-      <div class="btn-char-icon">${iconChar}</div>
-      <span class="btn-text-label">${labelText}</span>
-    `;
-    
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const targetElement = document.querySelector(targetSelector);
-      if (targetElement) {
-        // Correctly calculate position offsets for accurate view targets
-        const absoluteTop = window.pageYOffset || document.documentElement.scrollTop;
-        const targetTop = targetElement.getBoundingClientRect().top + absoluteTop;
-        window.scrollTo({ top: Math.max(0, targetTop - 20), behavior: 'smooth' });
-        
-        // Auto-collapse navigation panel cleanly upon section selection choice
-        navMenuStack.classList.add('collapsed');
-        document.body.classList.remove('nav-visible');
-        document.body.classList.add('nav-collapsed');
-      }
-    });
-
-    navMenuStack.appendChild(btn);
-  };
-
-  // 2. Create element section maps matching layout landing blocks
-  createMinimalBtn('#aviation-section', 'Aviation Segment', '✈');
-  createMinimalBtn('#hydrogen-section', 'Green Hydrogen', '⚡');
-  createMinimalBtn('#infrastructure-section', 'AI Infrastructure', 'AI');
-
-  // 3. Functional event binding handler directly attached to toggle
-  navToggleInline.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (document.body.classList.contains('splash-in-view')) return;
-
-    const isCurrentlyCollapsed = navMenuStack.classList.contains('collapsed');
-
-    if (isCurrentlyCollapsed) {
-      navMenuStack.classList.remove('collapsed');
-      document.body.classList.remove('nav-collapsed');
-      document.body.classList.add('nav-visible');
-    } else {
-      navMenuStack.classList.add('collapsed');
-      document.body.classList.remove('nav-visible');
-      document.body.classList.add('nav-collapsed');
     }
   });
 });
