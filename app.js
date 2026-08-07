@@ -1,10 +1,9 @@
 /* ========================================================
-   app.js — updated: inline small-top toggle + collapsed thin nav
-   - Maintains all previous behavior (expanded card observer, rAF-driven visibility engine, Read More toggles)
-   - Nav now supports collapsed thin-column state (~50px) and an inline small-square toggle at top-right of the nav
-   - Consolidated passive tracker and removed duplicate DOMContentLoaded handler
-   - Made nav-toggle-inline the single source of truth for toggling navigation; set aria attributes and consolidated nav buttons
-   - Restored visibility of the three integrated nav buttons by ensuring 'btn-visible' is applied
+   app.js — updated: refined nav icons, ordering, and professional styles
+   - Restores three nav buttons and adds a Home button
+   - Replaces single-character icons with compact inline SVGs for consistent rendering
+   - Ensures buttons are created inside the left-nav-menu-stack and marked visible
+   - Keeps overlay behaviour and collapse-on-select
    ======================================================== */
 
 const DEBUG = false; // toggle to true for console debug
@@ -66,7 +65,7 @@ const showControls = () => {
     document.body.classList.remove('nav-collapsed');
     document.body.classList.add('nav-visible');
     // ensure CSS var is set to expanded width
-    document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '308px');
+    document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '240px');
     // accessibility
     navMenuStack.setAttribute('aria-hidden', 'false');
     if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'true');
@@ -216,7 +215,7 @@ const initializeNavigationControls = () => {
     navToggleInline.setAttribute('title', 'Show / Hide');
     navToggleInline.setAttribute('aria-expanded', 'false');
     navToggleInline.innerHTML = `
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
         <line x1="9" y1="3" x2="9" y2="21"></line>
       </svg>
@@ -240,7 +239,7 @@ const initializeNavigationControls = () => {
       navToggleInline.classList.remove('collapsed');
       userClosedNav = false;
       // sync CSS var
-      document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '308px');
+      document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '240px');
       navMenuStack.setAttribute('aria-hidden', 'false');
       navToggleInline.setAttribute('aria-expanded', 'true');
       log('nav -> expanded');
@@ -268,16 +267,17 @@ const initializeNavigationControls = () => {
   // DO NOT create a 'go-to' heading or a separate close arrow button here — navToggleInline is the toggle
 
   // Helper: find-or-create button, attach handler once, ensure it lives inside navMenuStack
-  const ensureBtn = (className, handler, labelText = '', iconChar = '') => {
+  const ensureBtn = (className, handler, labelText = '', iconSVG = '') => {
     let btn = navMenuStack.querySelector(`.${className}`) || document.querySelector(`.${className}`);
     if (!btn) {
       btn = document.createElement('button');
-      // keep semantic class but also nav-item-action-link for layout
+      // semantic classes
       btn.className = `${className} nav-item-action-link btn-visible`;
+      btn.setAttribute('role', 'menuitem');
       if (labelText) btn.setAttribute('aria-label', labelText);
-      // build inner structure (icon + text) similar to minimalist buttons
+      // compact icon + label layout
       btn.innerHTML = `
-        <div class="btn-char-icon">${iconChar || ''}</div>
+        <span class="nav-icon" aria-hidden="true">${iconSVG || ''}</span>
         <span class="btn-text-label">${labelText || ''}</span>
       `;
       navMenuStack.appendChild(btn);
@@ -286,14 +286,13 @@ const initializeNavigationControls = () => {
       if (navMenuStack && btn.parentElement !== navMenuStack) {
         navMenuStack.appendChild(btn);
       }
-      // ensure text/icon present
-      if (!btn.querySelector('.btn-char-icon')) {
+      // ensure structure
+      if (!btn.querySelector('.nav-icon')) {
         btn.innerHTML = `
-          <div class="btn-char-icon">${iconChar || ''}</div>
+          <span class="nav-icon" aria-hidden="true">${iconSVG || ''}</span>
           <span class="btn-text-label">${labelText || ''}</span>
         `;
       }
-      // make visible if it exists but isn't
       btn.classList.add('btn-visible');
     }
 
@@ -329,22 +328,33 @@ const initializeNavigationControls = () => {
     }
   };
 
-  // Create three integrated nav buttons (icons + text) — only three, no duplicates
-  scrollTopTwoBtn = ensureBtn('scroll-top-two-btn', () => scrollToSection('#aviation-section', 'aviation'), 'Go to Aviation', '✈');
-  scrollTopThreeBtn = ensureBtn('scroll-top-three-btn', () => scrollToSection('#hydrogen-section', 'hydrogen'), 'Go to Hydrogen', '⚡');
-  scrollTopFourBtn = ensureBtn('scroll-top-four-btn', () => scrollToSection('#infrastructure-section', 'infrastructure'), 'Go to Infrastructure', 'AI');
+  // compact svg icons (16px) for professional look
+  const SVGs = {
+    home: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 4l9 6.5"/><path d="M9 21V12h6v9"/></svg>',
+    aviation: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l20-7-7 7 7 7-20-7z"/></svg>',
+    hydrogen: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M5 12h14"/></svg>',
+    infrastructure: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>'
+  };
 
-  // Ensure primary scrollTopBtn has handler too
+  // Create buttons in professional order: Home, Aviation, Hydrogen, Infrastructure
+  // Home - scroll to top
+  ensureBtn('nav-home-btn', (e) => { e.preventDefault(); safeScrollTo({ top: 0, behavior: 'smooth' }); }, 'Home', SVGs.home);
+
+  scrollTopTwoBtn = ensureBtn('scroll-top-two-btn', () => scrollToSection('#aviation-section', 'aviation'), 'Aviation', SVGs.aviation);
+  scrollTopThreeBtn = ensureBtn('scroll-top-three-btn', () => scrollToSection('#hydrogen-section', 'hydrogen'), 'Hydrogen', SVGs.hydrogen);
+  scrollTopFourBtn = ensureBtn('scroll-top-four-btn', () => scrollToSection('#infrastructure-section', 'infrastructure'), 'Infrastructure', SVGs.infrastructure);
+
+  // Ensure primary scrollTopBtn has handler too (floating top-right button)
   if (scrollTopBtn && !scrollTopBtn.dataset.hasHandler) {
     scrollTopBtn.addEventListener('click', () => safeScrollTo({ top: 0, behavior: 'smooth' }));
     scrollTopBtn.dataset.hasHandler = '1';
     scrollTopBtn.style.pointerEvents = 'auto';
   }
 
-  // Default: set nav to expanded and CSS var accordingly (unless user previously collapsed)
+  // Default: set nav to expanded visually (overlay) unless collapsed
   if (!navMenuStack.classList.contains('collapsed')) {
     document.body.classList.add('nav-visible');
-    document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '308px');
+    document.body.style.setProperty('--nav-current-width', getComputedStyle(document.documentElement).getPropertyValue('--nav-width') || '240px');
     navMenuStack.setAttribute('aria-hidden', 'false');
     if (navToggleInline) navToggleInline.setAttribute('aria-expanded', 'true');
   } else {
